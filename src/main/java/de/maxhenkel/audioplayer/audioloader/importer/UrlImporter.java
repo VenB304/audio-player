@@ -46,12 +46,32 @@ public class UrlImporter implements AudioImporter {
                 player.sendSystemMessage(
                         net.minecraft.network.chat.Component.literal("Non-standard audio detected. Transcoding..."));
             }
-            java.nio.file.Path tempFile = java.nio.file.Files.createTempFile("audioplayer_transcode", ".mp3");
+
+            java.nio.file.Path tempFile;
+            try {
+                // Try to create with restricted permissions (Unix/Linux/Mac)
+                java.util.Set<java.nio.file.attribute.PosixFilePermission> nioPermissions = java.nio.file.attribute.PosixFilePermissions
+                        .fromString("rw-------");
+                java.nio.file.attribute.FileAttribute<java.util.Set<java.nio.file.attribute.PosixFilePermission>> fileAttributes = java.nio.file.attribute.PosixFilePermissions
+                        .asFileAttribute(nioPermissions);
+                tempFile = java.nio.file.Files.createTempFile("audioplayer_transcode", ".mp3", fileAttributes);
+            } catch (UnsupportedOperationException e) {
+                // Fallback for Windows or systems without POSIX permission support
+                tempFile = java.nio.file.Files.createTempFile("audioplayer_transcode", ".mp3");
+            }
+
             try {
                 de.maxhenkel.audioplayer.transcode.FFmpegTranscodeService.instance().process(urlString, tempFile);
                 return java.nio.file.Files.readAllBytes(tempFile);
             } finally {
-                java.nio.file.Files.deleteIfExists(tempFile);
+                try {
+                    java.nio.file.Files.deleteIfExists(tempFile);
+                } catch (Exception e) {
+                    // Start a new thread to delete later or just log?
+                    // For now, logging to console might be too noisy if it's a lock issue,
+                    // but we should at least not crash the main thread.
+                    de.maxhenkel.audioplayer.AudioPlayerMod.LOGGER.warn("Failed to delete temp file: {}", tempFile, e);
+                }
             }
         }
 

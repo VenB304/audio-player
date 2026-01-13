@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class FFmpegTranscodeService {
 
@@ -126,12 +125,18 @@ public class FFmpegTranscodeService {
             throw new IOException("FFmpeg not available");
         }
 
-        int myOptions = queueSize.incrementAndGet();
-        if (myOptions > AudioPlayerMod.SERVER_CONFIG.maxConcurrentTranscodes.get()) {
-            AudioPlayerMod.LOGGER.info("Transcode queue active. Position: {}", myOptions);
+        int queuePosition = queueSize.incrementAndGet();
+        if (queuePosition > AudioPlayerMod.SERVER_CONFIG.maxConcurrentTranscodes.get()) {
+            AudioPlayerMod.LOGGER.info("Transcode queue active. Position: {}", queuePosition);
         }
 
-        queueSemaphore.acquire();
+        try {
+            queueSemaphore.acquire();
+        } catch (InterruptedException e) {
+            queueSize.decrementAndGet();
+            throw e;
+        }
+
         try {
             queueSize.decrementAndGet();
             runFFmpeg(url, destination);
@@ -183,7 +188,7 @@ public class FFmpegTranscodeService {
 
     private static class StreamGobbler extends Thread {
         private final InputStream inputStream;
-        private final StringBuilder output = new StringBuilder();
+        private final StringBuffer output = new StringBuffer();
 
         public StreamGobbler(InputStream inputStream) {
             this.inputStream = inputStream;
